@@ -24,6 +24,9 @@ class AgentState(TypedDict):
     # 기사 본문 텍스트 (추출 결과)
     article_body: str
     
+    # 재시도 횟수 관리 (무한 루프 방지)
+    retry_count: int
+    
     # 검색 수행 시 반환된 결과 리스트
     search_results: list[dict[str, str]]
     

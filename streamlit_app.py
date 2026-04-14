@@ -1,13 +1,15 @@
+
 import streamlit as st
 import uuid
 import os
 from dotenv import load_dotenv
+
+# 환경 변수 먼저 로드 (런타임 에러 방지)
+load_dotenv()
+
 from langchain_core.messages import HumanMessage, AIMessage
 from graphs.workflow import app
 import time
-
-# 환경 변수 로드
-load_dotenv()
 
 # 디자인 설정
 st.set_page_config(
@@ -129,11 +131,12 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 🤖 모델 정보")
-    st.code("Ollama Area\nModel: llama3.2:3b")
+    st.info("**Model**: OpenAI gpt-4o-mini\n\n**Framework**: LangGraph (Multi-Agent)")
     
     st.markdown("### 🛠️ 도구 상태")
     st.success("Tavily Search: Online")
     st.success("Trafilatura Parser: Ready")
+    st.success("Report Generator: Ready")
     
     if st.button("🔄 대화 초기화", use_container_width=True):
         st.session_state.messages = []
@@ -172,8 +175,8 @@ if prompt := st.chat_input("기사 URL 또는 검색 키워드를 입력하세�
                 for node_name, output in chunk.items():
                     st.write(f"✅ **{node_name.upper()}** 단계 완료")
                     
-                    # 에러 처리
-                    if "error_message" in output and output["error_message"]:
+                    # 에러 처리 (output이 None이거나 dict가 아닐 경우 대비)
+                    if isinstance(output, dict) and "error_message" in output and output["error_message"]:
                         st.error(f"⚠️ {output['error_message']}")
             
             status.update(label="✅ 분석 완료!", state="complete", expanded=False)

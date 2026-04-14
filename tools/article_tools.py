@@ -18,12 +18,19 @@ def article_parser_tool(url: str) -> dict[str, str]:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         
-        # 인코딩 자동 감지 및 설정
+        # 인코딩 자동 감지 및 설정 (euc-kr, cp949 등 한국어 특화 처리)
         if response.encoding == 'ISO-8859-1':
             response.encoding = response.apparent_encoding
             
-        html_content = response.text
-        
+        try:
+            html_content = response.content.decode(response.encoding or 'utf-8')
+        except UnicodeDecodeError:
+            # 인코딩 감지 실패 시 cp949(한국어 윈도우 표준)로 재시도
+            try:
+                html_content = response.content.decode('cp949')
+            except UnicodeDecodeError:
+                html_content = response.text # 최후의 수단
+            
         # 본문 및 메타데이터 추출
         result = trafilatura.extract(html_content, output_format='txt', include_comments=False, include_tables=True)
         

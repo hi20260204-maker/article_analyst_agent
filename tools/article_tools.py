@@ -1,0 +1,46 @@
+# tools/article_tools.py
+from langchain_core.tools import tool
+import trafilatura
+import requests
+from typing import Optional
+
+@tool
+def article_parser_tool(url: str) -> dict[str, str]:
+    """
+    제공된 URL에서 기사의 본문과 제목을 추출합니다.
+    한국어 인코딩 문제를 방지하기 위해 강제 인코딩 감지 로직을 포함합니다.
+    """
+    try:
+        # requests를 사용하여 수동으로 다운로드 (인코딩 처리 강화를 위함)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # 인코딩 자동 감지 및 설정
+        if response.encoding == 'ISO-8859-1':
+            response.encoding = response.apparent_encoding
+            
+        html_content = response.text
+        
+        # 본문 및 메타데이터 추출
+        result = trafilatura.extract(html_content, output_format='txt', include_comments=False, include_tables=True)
+        
+        # 제목 추출
+        metadata = trafilatura.extract_metadata(html_content)
+        title = metadata.title if metadata else "제목 없음"
+        
+        if result:
+            print(f"  [Parser] 추출 성공: {title[:20]}...")
+            return {
+                "title": title or "제목 없음",
+                "content": result,
+                "url": url
+            }
+        else:
+            return {"error": "본문 내용을 추출하는 데 실패했습니다. 페이지 구조가 복잡할 수 있습니다."}
+            
+    except Exception as e:
+        print(f"  [Parser] 에러 발생: {str(e)}")
+        return {"error": f"기사 추출 중 오류 발생: {str(e)}"}

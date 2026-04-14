@@ -1,0 +1,14 @@
+langchain
+langchain-ollama
+langchain-openai
+langchain-community
+langchain-core
+langgraph
+langchain-tavily
+python-dotenv
+trafilatura
+streamlit
+pandas
+matplotlib
+koreanize-matplotlib
+dotenv

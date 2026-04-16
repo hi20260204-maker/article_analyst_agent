@@ -11,6 +11,17 @@ def article_parser_tool(url: str) -> dict[str, str]:
     한국어 인코딩 문제를 방지하기 위해 강제 인코딩 감지 로직을 포함합니다.
     """
     try:
+        # 보안 및 필터링: 허용되지 않는 도메인이나 프로토콜 차단
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in ["http", "https"]:
+            return {"error": "지원하지 않는 프로토콜입니다. (http, https만 가능)"}
+        
+        # 저품질 또는 차단된 도메인 리스트 (예시)
+        blocked_domains = ["malicious.com", "example-leak.net"]
+        if any(domain in parsed_url.netloc for domain in blocked_domains):
+            return {"error": "신뢰할 수 없는 도메인입니다."}
+
         # requests를 사용하여 수동으로 다운로드 (인코딩 처리 강화를 위함)
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'

@@ -13,7 +13,7 @@ def route_based_on_type(state: AgentState) -> str:
     """input_type 및 메시지 상태에 따라 다음 노드를 결정합니다."""
     input_type = state.get("input_type")
     
-    if input_type in ["url_analysis", "search_and_analyze", "general_chat"]:
+    if input_type in ["url_analysis", "search_and_analyze", "compare_articles", "general_chat"]:
         return "agent"
     elif input_type == "followup_question":
         return "analyst"

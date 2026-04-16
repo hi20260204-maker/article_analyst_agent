@@ -23,29 +23,54 @@ def classifier_node(state: AgentState) -> dict[str, str]:
         last_message = state.get("user_input", "")
 
     prompt = f"""
-    당신은 입력 분류기입니다. 사용자의 다음 입력을 분석하여 'input_type'을 선택하세요.
+    당신은 입력 분류기이자 의도 파악 전문가입니다. 사용자의 입력을 분석하여 'input_type'과 구체적인 'analysis_objective'를 JSON 형식으로 반환하세요.
     입력: "{last_message}"
     
+    [input_type 분류 기준]
     1. url_analysis: URL이 포함된 기사 분석 요청.
     2. search_and_analyze: 키워드 뉴스 검색 요청.
     3. followup_question: 이전 분석에 대한 추가 대화 (기사 내용 질문 등).
     4. general_chat: 인사 등 일반 대화.
     
-    답변은 오직 영문 타입 키워드만 출력하세요. (예: url_analysis)
+    [analysis_objective 추출 기준]
+    - 사용자가 알고 싶어하는 구체적인 '분석의 맥락'이나 '관점'을 한 문장으로 정의하세요.
+    - 예: "삼성전자 실적" -> "삼성전자의 분기 실적 추이와 시장 지배력 변화 분석"
+    - 예: "AI 윤리" -> "AI 기술 발전에 따른 윤리적 쟁점과 규제 현황 비교 분석"
+    - 특별한 의도가 없으면 "일반적인 정보 요약 및 분석"으로 설정하세요.
+    
+    답변은 오직 JSON 형식으로만 출력하세요.
+    형식: {{"input_type": "...", "analysis_objective": "..."}}
     """
     
     response = llm.invoke([HumanMessage(content=prompt)])
-    input_type = response.content.strip().lower()
+    try:
+        # JSON 파싱 시도 (간혹 정규화 안 된 경우 대비)
+        import json
+        content = response.content.strip()
+        if "```json" in content:
+            content = content.split("```json")[-1].split("```")[0].strip()
+        elif "{" in content:
+            content = content[content.find("{"):content.rfind("}")+1]
+        
+        result = json.loads(content)
+        input_type = result.get("input_type", "general_chat").lower()
+        analysis_objective = result.get("analysis_objective", "일반적인 정보 요약 및 분석")
+    except Exception as e:
+        print(f"  [Error] JSON 파싱 실패: {e}")
+        input_type = "general_chat"
+        analysis_objective = "일반적인 정보 요약 및 분석"
     
     valid_types = ["url_analysis", "search_and_analyze", "followup_question", "general_chat"]
-    if not any(t in input_type for t in valid_types):
-        for t in valid_types:
-            if t in input_type:
-                input_type = t
-                break
-        else:
-            input_type = "general_chat"
+    if input_type not in valid_types:
+        input_type = "general_chat"
                 
     print(f"  [결과] 의도 분류: {input_type}")
-    # retry_count 초기화 (새로운 요청 시)
-    return {"input_type": input_type, "user_input": last_message, "retry_count": 0}
+    print(f"  [결과] 분석 목표: {analysis_objective}")
+    
+    return {
+        "input_type": input_type, 
+        "analysis_objective": analysis_objective,
+        "user_input": last_message, 
+        "retry_count": 0,
+        "article_list": [] # 상태 초기화
+    }

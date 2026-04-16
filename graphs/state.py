@@ -15,13 +15,19 @@ class AgentState(TypedDict):
     # 입력 타입 분류: 5가지 케이스에 대한 엄격한 정의
     input_type: Literal["url_analysis", "search_and_analyze", "followup_question", "compare_articles", "general_chat"]
     
-    # 현재 분석 중인 기사 URL
+    # 사용자로부터 파악된 구체적인 분석 목표/의도
+    analysis_objective: str
+    
+    # 다중 수집된 기사 리스트
+    article_list: list[dict[str, str]]
+    
+    # 현재 분석 중인 기사 URL (하위 호환성 유지)
     current_article_url: str
     
-    # 기사 제목 (추출 결과)
+    # 기사 제목 (하위 호환성 유지)
     article_title: str
     
-    # 기사 본문 텍스트 (추출 결과)
+    # 기사 본문 텍스트 (하위 호환성 유지)
     article_body: str
     
     # 재시도 횟수 관리 (무한 루프 방지)

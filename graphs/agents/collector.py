@@ -15,12 +15,13 @@ tools = [article_parser_tool, web_search_tool, analysis_reporter_tool]
 llm_with_tools = llm.bind_tools(tools)
 
 def call_model(state: AgentState) -> dict:
-    """초기 도구 호출(추출/검색) 및 검색 결과 선택을 위한 노드입니다."""
+    """초기 도구 호출(추출/검색) 및 다중 기사 선택을 위한 노드입니다."""
     print("--- [Nodes] Agent(call_model) 진입 ---")
     messages = state["messages"]
     input_type = state.get("input_type", "general_chat")
     search_results = state.get("search_results", [])
     retry_count = state.get("retry_count", 0)
+    analysis_objective = state.get("analysis_objective", "")
     
     # 무한 루프 방지 로직
     if retry_count >= 3:
@@ -28,18 +29,28 @@ def call_model(state: AgentState) -> dict:
 
     intent_guide = ""
     if input_type == "url_analysis":
-        intent_guide = "사용자가 URL을 주었습니다. 'article_parser_tool'을 사용하여 본문을 추출하세요."
+        intent_guide = f"사용자가 URL을 주었습니다. 'article_parser_tool'을 사용하여 본문을 추출하세요. 분석 목표: {analysis_objective}"
     elif input_type == "search_and_analyze":
         if not search_results:
-            intent_guide = "사용자가 주제 검색을 요청했습니다. 'web_search_tool'을 사용하여 관련 뉴스를 찾으세요."
+            intent_guide = f"""
+            사용자가 뉴스 검색 및 분석을 요청했습니다. 
+            분석 목표: {analysis_objective}
+            
+            위 목표를 달성하기 위해 가장 적합한 최신 뉴스를 찾을 수 있는 **핵심 키워드 2~3개**를 생성하여 'web_search_tool'을 호출하세요.
+            (예: "삼성전자 HBM 양산 계획", "반도체 시장 점유율 전망" 등)
+            """
         else:
             intent_guide = f"""
-            현재 다음 뉴스 검색 결과가 확보되었습니다:
-            {json.dumps(search_results, ensure_ascii=False, indent=2)}
+            [강제 지시]
+            당신은 현재 뉴스 검색 결과를 분석 목표({analysis_objective})에 맞춰 선별하는 단계에 있습니다.
             
-            위 검색 결과 중 사용자의 의도에 가장 부합하고 내용이 풍부한 기사 1개를 선택하세요.
-            그 후, 선택한 기사의 URL을 사용하여 **반드시 'article_parser_tool'을 호출**하여 본문을 추출하세요.
-            사용자에게 검색 결과 목록을 단순히 나열하지 말고, 즉시 분석 단계로 진행해야 합니다. 
+            1. 아래 검색 결과 중 분석 가치가 높은 **서로 다른 기사 3~5개**를 선택하세요.
+            2. 선택한 각 기사의 URL에 대해 **반드시 'article_parser_tool'을 각각 호출**하세요.
+            3. 사용자에게 검색 결과를 설명하거나 텍스트로 답변하지 마세요. 
+            4. 오직 도구 호출(tool_calls)만 생성하세요. 텍스트 응답은 금지됩니다.
+
+            검색 결과:
+            {json.dumps(search_results, ensure_ascii=False, indent=2)}
             """
     
     if intent_guide:
@@ -49,41 +60,65 @@ def call_model(state: AgentState) -> dict:
     return {"messages": [response], "retry_count": retry_count + 1}
 
 def state_sync_node(state: AgentState) -> dict:
-    """도구 실행 결과를 상태 필드에 동기화합니다."""
+    """도구 실행 결과를 상태 필드에 동기화하며, 다중 기사를 article_list에 누적합니다."""
     print("--- [Nodes] State Sync 진입 ---")
     messages = state["messages"]
-    last_message = messages[-1]
     
-    if last_message.type == "tool":
-        content = last_message.content
-        
-        # 도구 실행 에러 감지
+    # 마지막 AI 메시지 이후의 모든 도구 응답을 찾아 처리
+    new_updates = {
+        "article_list": state.get("article_list", []) or [],
+        "search_results": state.get("search_results", []),
+        "error_message": ""
+    }
+    
+    # 마지막 AI 메시지 인덱스 찾기
+    last_ai_idx = -1
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].type == "ai":
+            last_ai_idx = i
+            break
+            
+    # AI 메시지 이후의 도구 메시지들을 처리
+    tool_messages = messages[last_ai_idx + 1:]
+    for msg in tool_messages:
+        if msg.type != "tool":
+            continue
+            
+        content = msg.content
+        # 도구 실행 에러 감지 (일부 실패는 허용할 수 있으므로 에러 메시지만 기록하고 중단하지 않음)
         if '"error":' in content or "실패했습니다" in content or "오류" in content:
-            return {"error_message": content}
+            print(f"  [Warning] 도구 호출 중 일부 오류 발생: {content[:50]}...")
+            continue
 
         # 1. article_parser_tool 결과 처리
         if '"content":' in content:
             try:
                 data = json.loads(content)
-                return {
-                    "article_body": data.get("content", ""),
-                    "article_title": data.get("title", "제목 없음"),
-                    "current_article_url": data.get("url", ""),
-                    "error_message": "" # 에러 초기화
+                new_article = {
+                    "title": data.get("title", "제목 없음"),
+                    "content": data.get("content", ""),
+                    "url": data.get("url", "")
                 }
+                if not any(a['url'] == new_article['url'] for a in new_updates["article_list"]):
+                    new_updates["article_list"].append(new_article)
+                    # 하위 호환성용 필드 업데이트
+                    new_updates["article_body"] = new_article["content"]
+                    new_updates["article_title"] = new_article["title"]
+                    new_updates["current_article_url"] = new_article["url"]
             except: pass
             
         # 2. web_search_tool 결과 처리
-        if content.startswith("["):
+        elif content.startswith("["):
             try:
                 search_data = json.loads(content)
-                return {"search_results": search_data, "error_message": ""}
+                new_updates["search_results"] = search_data
             except: pass
 
         # 3. analysis_reporter_tool 결과 처리
-        if ".md" in content:
-            return {"report_path": content, "analysis_result": {"status": "completed"}}
+        elif ".md" in content:
+            new_updates["report_path"] = content
+            new_updates["analysis_result"] = {"status": "completed"}
                 
-    return {}
+    return new_updates
 
 execute_tools = ToolNode(tools)
